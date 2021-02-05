@@ -127,7 +127,7 @@ class GameState:
             SOUNDS['hit'].play()
             SOUNDS['die'].play()
             terminal = True
-            # self.__init__()  # 在训练时，需要将这行不注释
+            self.__init__()  # 在训练时，需要将这行不注释
             reward = -1
 
         # draw sprites

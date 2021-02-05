@@ -9,8 +9,10 @@
 """
 
 import os
+
 current_dir = os.path.dirname(__file__)
 import sys
+
 sys.path.append(current_dir + '/game')
 
 import tensorflow as tf
@@ -26,7 +28,6 @@ from datetime import datetime
 
 # 导入双端队列，之所以用双端队列是由于要维护一个固定大小的Replay Memory
 from collections import deque
-
 
 ACTIONS = 2  # 允许的动作数量，在Flappy Bird游戏中为【0:不跳跃，1:跳跃】
 GAMMA = 0.99  # 观测值的衰减率
@@ -47,37 +48,17 @@ def creatDQN():
     即有几种状态，DQN就有几种输出，每一种输出对应采用相应动作后获得的回报。
     DQN实际上就是一个深度卷积网络。
     """
-    model = tf.keras.Sequential()
-    # 添加第一个卷积层，输入为(80,80,4)【通道4是由于采用连续4帧游戏画面】
-    model.add(layers.Conv2D(32, (8, 8), strides=(4, 4), use_bias=True,
-                            input_shape=[80, 80, 4], activation='relu',
-                            padding='same', kernel_initializer=RandomUniform()))
-    assert model.output_shape == (None, 20, 20, 32)
-    # 添加池化层
-    model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
-    assert model.output_shape == (None, 10, 10, 32)
-    # 添加卷积层
-    model.add(layers.Conv2D(64, (4, 4), strides=(2, 2), use_bias=True,
-                            activation='relu', padding='same',
-                            kernel_initializer=RandomUniform()))
-    assert model.output_shape == (None, 5, 5, 64)
-    model.add(layers.Conv2D(64, (3, 3), strides=1, use_bias=True,
-                            activation='relu', padding='same',
-                            kernel_initializer=RandomUniform()))
-    assert model.output_shape == (None, 5, 5, 64)
-    # 将输出拉平
-    model.add(layers.Flatten())
-    # 添加全连接层
-    model.add(layers.Dense(512, use_bias=True, activation='relu',
-                           kernel_initializer=RandomUniform()))
-    # 添加输出层
-    model.add(layers.Dense(ACTIONS, use_bias=True,
-                           kernel_initializer=RandomUniform()))
-    assert model.output_shape == (None, 2)
+    base_model = tf.keras.applications.MobileNetV2(include_top=False)
+    inputs = tf.keras.layers.Input(shape=(80, 80, 3))
+    x = base_model(inputs)
+    x = tf.keras.layers.Flatten()(x)
+    outputs = tf.keras.layers.Dense(ACTIONS)(x)
+
+    model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+
     model.compile(loss='mse',
                   optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE))
     return model
-
 
 def trainDQN():
     """ 训练DQN网络"""
@@ -93,24 +74,19 @@ def trainDQN():
     # 将图片处理成二值图，在这里，像素点值大于1就被赋值为255
     ret, x_t = cv2.threshold(x_t, 1, 255, cv2.THRESH_BINARY)
     # 将二值图x_t按照像素点值排列顺序拉开，并复制4次，组合成4通道输入数据
-    s_t = np.stack((x_t, x_t, x_t, x_t), axis=2)
+    s_t = np.stack((x_t, x_t, x_t), axis=2)
 
     # 创建DQN模型
     model = creatDQN()
-    # 用于加载和保存网络参数
-    model_filename = current_dir + '/model/DQNModel.h5'
-    try:
-        model.load_weights(model_filename)
-        print('加载模型权重成功！')
-    except:
-        print('加载模型权重失败！')
+
+    model.summary()
 
     # 开始训练
     epsilon = INITIAL_EPSILON
     t = 0
     while True:
         # 获得模型的输出
-        state = s_t.astype('float32').reshape(1, 80, 80, 4)
+        state = s_t.astype('float32').reshape(1, 80, 80, 3)
         readout_t = model(state)
         a_t = np.zeros([ACTIONS])
         if t % FRAME_PER_ACTION == 0:
@@ -133,7 +109,7 @@ def trainDQN():
         x_t1 = cv2.cvtColor(cv2.resize(x_t1_colored, (80, 80)), cv2.COLOR_BGR2GRAY)
         ret, x_t1 = cv2.threshold(x_t1, 1, 255, cv2.THRESH_BINARY)
         x_t1 = np.reshape(x_t1, (80, 80, 1))
-        s_t1 = np.append(x_t1, s_t[:, :, :3], axis=2)
+        s_t1 = np.append(x_t1, s_t[:, :, :2], axis=2)
 
         # 将状态转移过程存储到D中，用于更新参数时采样
         D.append((s_t, a_t, r_t, s_t1, terminal))
